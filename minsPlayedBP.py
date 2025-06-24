@@ -1,11 +1,13 @@
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+from adjustText import adjust_text
+from matplotlib.lines import Line2D
 
 df = pd.read_csv("forwards.csv")
 y = "Minutes played"
 
-# colour-coding by club
+# colour-coding by Club
 club_colors = {
     "Brunei DPMM": "brown",
     "Balestier Khalsa": "red",
@@ -18,55 +20,77 @@ club_colors = {
     "Tanjong Pagar United": "magenta",
 }
 
-# use small jitter to separate each plot
-np.random.seed(42) 
-df["jitter"] = np.random.normal(loc = 0, scale = 0.04, size = len(df))
-max_jit = df["jitter"].abs().max()
-box_thickness = max_jit * 2.5
-
-
-# 1) add the box (horizontal)
-fig = go.Figure()
-fig.add_trace(go.Box(
-    x = df[y],
-    y = [0] * len(df),
-    orientation = 'h',
-    boxpoints = False,
-    fillcolor = 'gray',
-    opacity=0.5,
-    width = box_thickness,
-    line=dict(color='white'),
-    marker=dict(color='gray'),
-    hoverinfo='skip',
-    showlegend=False
-))
-
-# 2) overlay each club as its own scatter trace
-for club, color in club_colors.items():
-    club_df = df[df["Club"] == club]
-    fig.add_trace(go.Scatter(
-        x = club_df[y],
-        y = club_df["jitter"],
-        mode = 'markers',
-        name = club,
-        marker = dict(size = 10, color = color),
-        hovertemplate=(
-            "<b>%{text}</b><br>"
-            + club + "<br>" + "<br>" + 
-            "<extra>%{x}mins</extra>"
-        ),
-        text=club_df["Player"]
-    ))
-
-# layout tweaks
-fig.update_layout(
-    title = "Distribution of Minutes Played (by SPL Forwards)",
-    template = "plotly_dark",
-    xaxis = dict(title="Minutes Played", range=[0, df[y].max() * 1.02]),
-    yaxis=dict(title="", range=[-max_jit*3, max_jit*3], showticklabels=False),
-    margin = dict(l = 60, r = 40, t = 80, b = 60),
-    legend = dict(title="Club", font = dict(size = 10))
+plt.style.use('dark_background')
+fig, ax = plt.subplots(figsize=(13, 8.5))
+ax.boxplot(df[y], vert = False, widths = 0.3, patch_artist = True,
+           boxprops = dict(facecolor='gray', alpha=0.5, edgecolor='white'),
+           medianprops = dict(color='gold', linewidth=2)
 )
 
-fig.show()
-fig.write_html("minsPlayedBP_interactive.html")
+texts = []
+y_upper = df[y].quantile(0)
+local_fill_dic = {"Y": 1.0, "N": 0.0}
+for _, row in df.iterrows():
+    # horizontal jitter around x = 1
+    y_jitter = np.random.normal(loc = 1, scale = 0.06)
+    club = row["Club"]
+    col = club_colors.get(club, "white")
+
+    sc = ax.scatter(
+        row[y], y_jitter,
+        s = 100, marker = "o",
+        edgecolors = col,
+        facecolors = col if row["Is Local"] == "Y" else "none",
+        alpha = 0.8, linewidth = 1.5,
+        zorder=2
+    )
+
+    if row[y] >= y_upper:
+        texts.append(
+            ax.text(
+                row[y], y_jitter,
+                row["Player"],
+                fontsize = 9,
+                ha = "left", va = "center",
+                zorder = 4
+            )
+        )
+
+# adjust overlapping labels
+adjust_text(
+    texts, ax = ax,
+    arrowprops = dict(arrowstyle = '-', color = 'white', lw = 0.5),
+    expand_text = (1.2, 1.2), expand_points = (1.2, 1.2),
+    force_text = .5, force_explode = 0.5
+    )
+
+# axes and title labels
+ax.set_title("Distribution of Minutes Played (by SPL Forwards)")
+ax.set_xlabel("Minutes Played")
+ax.set_yticks([])
+
+# legend for club and local/foreign 
+legend = []
+
+for club, color in club_colors.items():
+    legend.append(Line2D(
+        [0], [0], marker = "o", color = "w",
+        markerfacecolor = color, markersize = 8, label = club
+        ))
+    
+legend.append(Line2D(
+    [0], [0], marker = "o", color = "w", markerfacecolor = "w",
+    markersize = 8, label = "Local", linestyle = ""
+    ))
+
+legend.append(Line2D(
+    [0], [0], marker = "o", color = "w", markerfacecolor = "none",
+    markersize = 8, label = "Foreigner", linestyle = ""
+    ))
+
+ax.legend(
+    handles = legend, loc = "upper right", frameon = True, 
+    facecolor='#222', edgecolor = "w", fontsize = 9)
+
+plt.tight_layout()
+plt.show()

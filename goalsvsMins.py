@@ -1,11 +1,11 @@
 import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+from adjustText import adjust_text
+from matplotlib.lines import Line2D
 
 df = pd.read_csv("forwards.csv")
-x, y = "Minutes played", "All Goals"
 
-# colour-coding by club
+# colour-coding by Club
 club_colors = {
     "Brunei DPMM": "brown",
     "Balestier Khalsa": "red",
@@ -18,70 +18,89 @@ club_colors = {
     "Tanjong Pagar United": "magenta",
 }
 
-# create scatterplot
-df["LocalYN"] = df["Is Local"].map({"Y": "Local", "N": "Foreigner"})
-fig = px.scatter(
-    df, x = x, y = y,
-    color = "Club",
-    color_discrete_map = club_colors,
-    hover_name = "Player",
-    hover_data = {x, y, "Club", "LocalYN"},
-    custom_data=["Club", "LocalYN"],  
-    title = "Total Goals vs Minutes Played (by SPL Forwards)",
-)
+plt.style.use('dark_background')
+fig, ax = plt.subplots(figsize=(13, 8.5))
+x, y = "Minutes played", "All Goals"
+ax.set_xlim(0, 3000)
+ax.set_ylim(-1, 45)
 
-# update hover information and trace size
-fig.update_traces(
-    hovertemplate=(
-        "<b>%{hovertext}</b><br>" +
-        "%{customdata[0]}" +
-        "<extra>Goals: %{y}<br>"
-        "Minutes: %{x}<br>" +
-        "%{customdata[1]}</extra>"
-    ),
-    marker = dict(size = 10)
-)
-
-# plot 90th percentile lines and shading upper square
+# plot 90th percentile lines and upper square
 x90 = df[x].quantile(0.9)
 y90 = df[y].quantile(0.9)
-fig.add_vline(
-    x = x90,
-    line_dash = "dash",
-    line_color = "gold",
-    line_width = 1,
-    annotation_text = f"90th Percentile ({x90:.0f} Minutes)",
-    annotation_position = "top left",
-    annotation_font_color = "gold"
-)
-fig.add_hline(
-    y = y90,
-    line_dash = "dash",
-    line_color = "gold",
-    line_width = 1,
-    annotation_text = f"90th Percentile ({x90:.0f} Goals)",
-    annotation_position = "bottom right",
-    annotation_font_color = "gold"
-)
-fig.add_shape(
-    type = "rect",
-    x0 = x90, x1 = df[x].max() * 1.02,
-    y0 = y90, y1 = df[y].max() * 1.1,
-    fillcolor = "gold",
-    opacity = 0.2,
-    layer = "below",
-    line_width = 0
-)
+ax.axvline(x90, color = "gold", linestyle = "--", lw = 1, zorder = 1)
+ax.axhline(y90, color = "gold", linestyle = "--", lw = 1, zorder = 1)
+ax.axvspan(xmin = x90, xmax = ax.get_xlim()[1], 
+           ymin = (y90 - ax.get_ylim()[0]) / (ax.get_ylim()[1] - ax.get_ylim()[0]), 
+           ymax = 1, color='gold', alpha=0.2) 
 
-# layout adjustment
-fig.update_layout(
-    template = "plotly_dark",
-    xaxis = dict(range = [0, df[x].max() * 1.02], title = "Minutes Played"),
-    yaxis = dict(range = [-1, df[y].max() * 1.1], title = "Total Goals"),
-    margin = dict(l = 60, r = 40, t = 80, b = 60),
-    legend = dict(font = dict(size = 10)),
-    autosize = True
-    ) 
 
-fig.show()
-fig.write_html("goalsvsMins_interactive.html")
+# plot points and collect labels
+texts = []
+mins_upper = df[x].quantile(0.50)
+goal_upper = df[y].quantile(0.50)
+for _, row in df.iterrows():
+    club_color = club_colors[row["Club"]]
+    face_color = club_color if row["Is Local"] == "Y" else "none"
+    ax.scatter(
+        row[x], row[y],
+        marker = 'o',
+        facecolors = face_color,
+        edgecolors = club_color,
+        s = 80,
+        alpha = 1,
+        zorder = 4
+    )
+    if row["Minutes played"] >= mins_upper or row["All Goals"] >= goal_upper:
+        texts.append(
+            ax.text(
+                row[x], row[y],
+                row["Player"],
+                fontsize = 10,
+                ha = "right", va = "bottom",
+                zorder = 4
+            )       
+        )
+
+adjust_text(
+    texts, ax = ax,
+    arrowprops = dict(arrowstyle = '-', color = 'white', lw = 0.5),
+    expand_text = (1.2, 1.2), expand_points = (1.2, 1.2),
+    force_text = .5, force_explode = 0.5
+    )
+
+ax.text(
+    x90, ax.get_ylim()[1]*1.02, f"90th Percentile ({x90:.0f} Minutes)", 
+    ha="center", va="top", color="gold", fontsize=9)
+ax.text(
+    ax.get_xlim()[1]*1.02, y90, f"90th Percentile ({y90:.0f} Goals)", 
+    ha="right", va="center", color="gold", fontsize=9, rotation=90)
+
+ax.set_title("Total Goals vs Minutes Played (by SPL Forwards)", fontsize = 14)
+ax.set_xlabel("Minutes Played", fontsize = 11)
+ax.set_ylabel("Total Goals", fontsize = 11)
+
+# legend for club and local/foreign 
+legend = []
+
+for club, color in club_colors.items():
+    legend.append(Line2D(
+        [0], [0], marker = "o", color = "w",
+        markerfacecolor = color, markersize = 8, label = club
+        ))
+    
+legend.append(Line2D(
+    [0], [0], marker = "o", color = "w", markerfacecolor = "w",
+    markersize = 8, label = "Local", linestyle = ""
+    ))
+
+legend.append(Line2D(
+    [0], [0], marker = "o", color = "w", markerfacecolor = "none",
+    markersize = 8, label = "Foreigner", linestyle = ""
+    ))
+
+ax.legend(
+    handles = legend, loc = "upper left", frameon = True, 
+    facecolor='#222', edgecolor = "w", fontsize = 9)
+
+plt.tight_layout()
+plt.show()
